@@ -49,16 +49,16 @@ P = dict(
     REPRO_SPLIT=0.5,          # padre/hijo se quedan con split * energía del padre
 
     # Daily goals (prioridad 1 y 2)
-    REPRO_GOAL=170.0,         # objetivo durante el día para "salir del mercado" y volver
+    REPRO_GOAL=170.0,         # si alcanza durante el día -> vuelve y espera
     SURVIVE_GOAL=60.0,        # si queda poco día y ya estás seguro -> vuelve
 
     # Energetic satiety (simplificación clave)
-    SATIETY_E=130.0,          # techo de energía por ingesta (no recorta, limita absorción)
-    SATIETY_EPS=10,         # tolerancia
+    SATIETY_E=220.0,          # >= E_INIT_MAX para que nadie "nazca saciado"
+    SATIETY_EPS=1e-3,         # tolerancia pequeña
 
     # Hawk-Dove
     INJURY_COST_D=21.0,       # D (H-H pierde uno)
-    TIME_COST_T=15.0,         # T (D-D ambos)
+    TIME_COST_T=10.0,         # T (D-D ambos)
 
     # UI
     STEPS_PER_FRAME_INIT=5,
@@ -237,7 +237,6 @@ class Cell:
 class Population:
     def __init__(self, env: Environment):
         self.env = env
-
         self.x = cp.array([], dtype=cp.float32)
         self.y = cp.array([], dtype=cp.float32)
         self.energy = cp.array([], dtype=cp.float32)
@@ -316,7 +315,6 @@ class Population:
         r = cp.sqrt(self.x * self.x + self.y * self.y)
         at_nest = r >= cp.float32(self.env.r_max - P["NEST_THICKNESS"])
 
-        # la condición esencial: energía >= threshold
         parents = cp.where(at_nest & (self.energy >= cp.float32(P["REPRO_THRESHOLD"])))[0]
         if int(parents.size) == 0:
             return 0
@@ -388,7 +386,7 @@ class Population:
 
 
 # ============================================================
-# Simulation (global day/night)
+# Simulation (global day/night) + FIX de transiciones visibles
 # ============================================================
 class Simulation:
     def __init__(self):
@@ -406,7 +404,7 @@ class Simulation:
             eaten_today=0,
             death_causes={}
         )
-        
+
         self.just_started_phase = True
         self.start_day()  # arrancamos en día 1
 
@@ -419,12 +417,9 @@ class Simulation:
         self.stats["eaten_today"] = 0
         self.stats["deaths_today"] = 0
 
-        # push inside a bit
-        r = cp.sqrt(self.pop.x * self.pop.x + self.pop.y * self.pop.y) + 1e-9
-        target_r = cp.float32(self.env.r_max - 0.9)
-        scale = target_r / r
-        self.pop.x *= scale
-        self.pop.y *= scale
+        # IMPORTANTE: NO "push inside" aquí.
+        # Así el primer frame del día muestra a todos en el nido (outer ring),
+        # y los movimientos se ven solo cuando haces step_day.
 
         self.phase = "day"
         self.phase_step = 0
@@ -439,19 +434,27 @@ class Simulation:
         self.just_started_phase = True
 
     def step(self):
+        """
+        Avanza 1 tick.
+        Retorna "dawn" o "dusk" cuando hay transición (para cortar batch en animate).
+        """
         if self.pop.size() == 0:
-            return
+            return None
 
         if self.phase == "day":
             self.step_day()
             self.phase_step += 1
             if self.phase_step >= P["DAY_STEPS"]:
                 self.start_night()
+                return "dusk"
         else:
             self.step_night()
             self.phase_step += 1
             if self.phase_step >= P["NIGHT_STEPS"]:
                 self.start_day()
+                return "dawn"
+
+        return None
 
     def step_night(self):
         # everyone returns together
@@ -468,11 +471,6 @@ class Simulation:
 
     def step_day(self):
         self.pop.metabolic(day=True)
-
-        if int(self.env.food_x.size) == 0:
-            d = self.pop.kill_dead_and_classify(self.stats["death_causes"])
-            self.stats["deaths_today"] += d
-            return
 
         # energetic satiety: if already >= SATIETY_E -> stop searching today
         self.pop.done_for_day |= (self.pop.energy >= cp.float32(P["SATIETY_E"] - P["SATIETY_EPS"]))
@@ -494,7 +492,6 @@ class Simulation:
 
         idx_food, dist_food = self.env.nearest_food(self.pop.x, self.pop.y)
         if idx_food is None:
-            # no food -> brownian for seekers
             dx, dy, step = brownian_step(self.pop.size(), P["BROWNIAN_SIGMA"], P["SPEED"])
             self.pop.x = cp.where(seekers, self.pop.x + dx, self.pop.x)
             self.pop.y = cp.where(seekers, self.pop.y + dy, self.pop.y)
@@ -521,7 +518,7 @@ class Simulation:
         self.pop.x, self.pop.y = clip_to_circle(self.pop.x, self.pop.y, self.env.r_max)
         self.pop.move_cost(step, day=True, mask=seekers)
 
-        # grab candidates: only those still below SATIETY_E compete for food
+        # grab candidates: only hungry compete for food
         hungry = self.pop.energy < cp.float32(P["SATIETY_E"] - P["SATIETY_EPS"])
         fx2 = self.env.food_x[idx_food]
         fy2 = self.env.food_y[idx_food]
@@ -553,7 +550,6 @@ class Simulation:
                 for k, v in tim.items():
                     time_delta[k] = time_delta.get(k, 0.0) + v
 
-            # apply fight costs
             if injury_delta:
                 idxs = cp.asarray(list(injury_delta.keys()), dtype=cp.int32)
                 dvs = cp.asarray(list(injury_delta.values()), dtype=cp.float32)
@@ -582,7 +578,6 @@ class Simulation:
                     self.pop.ready_to_repro[reached_idx] = True
                     self.pop.done_for_day[reached_idx] = True
 
-            # consume food
             self.env.consume_food_indices(eaten_idx)
 
         # daily priority 2: near end of day, if safe, stop and return
@@ -597,8 +592,11 @@ class Simulation:
 
 
 # ============================================================
-# Plot / UI (black background, no grid, white outer ring)
+# Plot / UI
 # ============================================================
+random.seed(2)
+np.random.seed(2)
+
 sim = Simulation()
 env = sim.env
 pop = sim.pop
@@ -624,7 +622,7 @@ ax.set_xticks([])
 ax.set_yticks([])
 ax.spines["polar"].set_edgecolor("white")
 ax.spines["polar"].set_linewidth(1.6)
-ax.set_title("Hack vs Dove (essential + energetic satiety)", color="white", pad=18)
+ax.set_title("Hack vs Dove (essential + correct phase starts)", color="white", pad=18)
 
 ring_th = np.linspace(0, TWOPI, 800)
 ax.plot(ring_th, np.full_like(ring_th, env.r_max), color="white", linewidth=2.0, alpha=0.95)
@@ -645,13 +643,19 @@ def format_death_causes(dc: dict):
 
 
 def animate(_):
+    # ========================================================
+    # FIX CRÍTICO: mostrar inicio de fase SIN "movimientos invisibles"
+    # - Si acaba de empezar día o noche: NO avanzamos steps.
+    # - Si no: avanzamos un batch, pero CORTAMOS al cruzar una transición.
+    # ========================================================
     if sim.just_started_phase:
         sim.just_started_phase = False
     else:
         steps = int(speed_slider.val)
         for _ in range(steps):
-            sim.step()
-            if sim.step() is not None:
+            event = sim.step()  # <<< UNA sola llamada por iteración
+            if event is not None:
+                # Cortamos para que el próximo frame muestre phase_step=0 limpio
                 break
             if pop.size() == 0:
                 break
