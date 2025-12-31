@@ -1,6 +1,5 @@
 from Classes import *
 from Utilities import *
-from Simulation import *
 from Visualization import *
 
 # ----------------------------
@@ -45,7 +44,7 @@ if __name__ == "__main__":
     u.spawn_food(120)
 
     # Population
-    cells = [Cell(np.random.uniform(0, 100), np.random.uniform(0, 100), energy=18, hydration=12) for _ in range(40)]
+    cells = [Cell(np.random.uniform(0, 100), np.random.uniform(0, 100), energy=18, hydration=12) for _ in range(50)]
     pop = Population(cells, u)
 
     # Run

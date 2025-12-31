@@ -1,52 +1,7 @@
 from Utilities import *
-
-#Universe parameters
-NUM_CYCLES = 500
-STEPS_PER_CYCLE = 100
-
-GRID_SIZE_X = 1600
-GRID_SIZE_Y = 900
-
-NEST_RADIUS = 5.0
-WATER_SOURCES_RADIUS = 10.0
-
-# Caracteristics of cell parameters: Cost of being alive and moving
-CELL_METABOLISM_BASE = 0.020
-STEP_SIZE = 1.0                  # Distance moved per step
-REPRO_ENERGY_THRESHOLD = 30.0
-VELOCITY_COST_FACTOR = 0.010
-THIRST_PENALTY = 0.020
-HYDRATION_COST_FACTOR = 0.012
-
-ACCELERATION = 0.30
-MAX_SPEED = 1.4
-DAMPING = 0.90
-NOISE_RW = 0.08
-
-ALMOST_ZERO = 1e-9
+from Parameters import *
 
 
-
-# Iteraction with universe parameters
-FOOD_VALUE = 10.0
-INITIAL_ENERGY = 20.0
-INITIAL_POPULATION = 20
-INITIAL_HYDRATION = 10.0
-
-THIRST_THRESHOLD = 6
-HUNGRY_TRESHOLD = 10
-
-EATING_THRESHOLD = 1
-DRINKING_THRESHOLD = 2.3
-
-HYDRATION_LIMIT = 20
-ENERGY_LIMIT = None
-
-
-# Reproduction
-CHILD_PART = 0.45
-PARENT_PART = 1 - CHILD_PART
-COOLDOWN = 220
 
 
 # ----------------------------
@@ -210,17 +165,54 @@ class Cell:
         angle = np.random.uniform(0, 2 * np.pi)
         return np.cos(angle), np.sin(angle)
 
-    def move(self, universe: Universe, max_speed=MAX_SPEED, accel=ACCELERATION, damping=DAMPING, noise=NOISE_RW) -> float:
+    def move(self, universe: Universe, max_speed=MAX_SPEED, accel=ACCELERATION, damping=DAMPING, noise=NOISE_RW, water_radius=WATER_SOURCES_RADIUS) -> float:
+        
+        #Target
         tx, ty = self.decide_target(universe)
         norm = float(np.hypot(tx, ty) + ALMOST_ZERO)
         tx, ty = tx / norm, ty / norm
+        
+        # Repel from nearest water source if any exist; otherwise no repulsion
+        if universe.water_sources.size:
+            wx = universe.water_sources[:, 0]
+            wy = universe.water_sources[:, 1]
+            d2 = torus_dist2(wx, wy, self.x, self.y, universe.size_x, universe.size_y)
+            
+            
+        # use argmin safely because d2 is non-empty here
+        i = int(np.argmin(d2))
+        rdx = torus_delta(wx[i], self.x, universe.size_x)
+        rdy = torus_delta(wy[i], self.y, universe.size_y)
 
-        # acceleration + noise + damping (smooth): accel*tz is the directed force, is the non random component
-        self.vx = damping * self.vx + accel * tx + np.random.normal(0, noise)
-        self.vy = damping * self.vy + accel * ty + np.random.normal(0, noise)
+       
+        if d2[i]<DAMPING * water_radius: 
+            # Repelling Water sources (quadratic falloff)
+            rx = -10 * (rdx ** 2) + (DAMPING * water_radius) ** 2 * 10
+            ry = -10 * (rdy ** 2) + (DAMPING * water_radius) ** 2 * 10
+        else:
+            rx = 0
+            ry = 0
+            
 
-        # compute speed: Speed is the the force vector magnitude from x,y
-        speed = float(np.hypot(self.vx, self.vy) + ALMOST_ZERO)
+        # acceleration + noise + damping (smooth): accel*tz is the directed force
+        # Separate the "intentional" velocity (base_v) from the repulsion (rx,ry).
+        # Energy cost will be computed from base_v so repulsion does not increase metabolic cost.
+        noise_x = np.random.normal(0, noise)
+        noise_y = np.random.normal(0, noise)
+        base_vx = damping * self.vx + accel * tx + noise_x
+        base_vy = damping * self.vy + accel * ty + noise_y
+
+        # cap repulsion magnitude to avoid huge instantaneous jumps
+        max_repulse = 0.6
+        rx = float(np.clip(rx, -max_repulse, max_repulse))
+        ry = float(np.clip(ry, -max_repulse, max_repulse))
+
+        # full velocity includes repulsion (affects movement), but energy cost uses base_v
+        self.vx = base_vx + rx
+        self.vy = base_vy + ry
+
+        # speed used for metabolism excludes the repulsion component
+        speed = float(np.hypot(base_vx, base_vy) + ALMOST_ZERO)
         
         # clamp speed
         if speed > max_speed:
@@ -329,7 +321,7 @@ class Population:
                 continue
 
             speed = c.move(self.universe)
-
+            
             if c.try_eat(self.universe):
                 food_eaten_this_step += 1
             c.try_drink(self.universe)
@@ -415,8 +407,8 @@ class Simulation:
         food_sc = ax.scatter([], [], s=18, alpha=0.9)  # default color in dark_background is bright; ok
 
         # Cells: glow layer + main layer. Color by energy.
-        cell_glow = ax.scatter([], [], s=[], alpha=0.10, cmap="vidris", vmin=0, vmax=20, color="red")
-        cell_sc = ax.scatter([], [], s=[], alpha=0.95, cmap="vidris", vmin=0, vmax=20, color="orange")
+        cell_glow = ax.scatter([], [], s=[], alpha=0.10, cmap="plasma", vmin=0, vmax=20)
+        cell_sc = ax.scatter([], [], s=[], alpha=0.95, cmap="plasma", vmin=0, vmax=20)
 
         hud = ax.text(
             0.02, 0.98, "",
