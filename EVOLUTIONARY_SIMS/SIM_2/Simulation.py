@@ -39,7 +39,7 @@ INITIAL_HYDRATION = 10.0
 # ----------------------------
 if __name__ == "__main__":
     # World
-    u = Universe(size_x=100, size_y=100, food_value=7.5, nest_radius=8, water_sources_radius=10)
+    u = Universe()
     u.gen_water_sources()
     u.spawn_food(120)
 
