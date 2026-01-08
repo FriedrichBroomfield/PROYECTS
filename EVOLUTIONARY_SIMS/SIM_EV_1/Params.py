@@ -38,6 +38,8 @@ MOVES_PER_STEP = 1.0  # Movements per step
 DISTANCE_PER_MOVE  =  0  # Caracteristics of cell parameters: Some are faster than others
 COLISION_THRESHOLD = 5.0  # Distance threshold for collision detection
 INITIAL_ENERGY = 100.0  # Initial energy of each cell
+WATER_RELEVANCE = 0.5  # Relevance of water consumption to overall energy
+FOOD_RELEVANCE = 0.5  # Relevance of food consumption to overall energy
 
 # IGORE PARAMS
 SIGTH_RADIUS_IGOR = 50  # Sight radius for cells
