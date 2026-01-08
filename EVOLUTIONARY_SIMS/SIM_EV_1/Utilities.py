@@ -1,16 +1,18 @@
+from Params import *
 import numpy as np
 import random
 import pandas as pd
 import os
 import pathlib as path
 
-from Params import *
+
 
 # -------------- BASIC UTILITIES FOR CREATURES -------------- #
 
 def ENERGY_stock(food_stock,water_stock,food_value=FOOD_ENERGY_VALUE,water_value=WATER_ENERGY_VALUE, food_relevance=FOOD_RELEVANCE,water_relevance=WATER_RELEVANCE):
     """Calculate energy stock from food amount and water amount."""
-    energy = ((food_stock * food_value)**food_relevance) * ((water_stock * water_value)**water_relevance)
+    energy = round(((food_stock * food_value)**food_relevance) * ((water_stock * water_value)**water_relevance), 2)
+    
     return energy
 
 def ENERGY_delta(food_stock,water_stock,food_delta=0,water_delta=0,food_relevance=FOOD_RELEVANCE,water_relevance=WATER_RELEVANCE):
