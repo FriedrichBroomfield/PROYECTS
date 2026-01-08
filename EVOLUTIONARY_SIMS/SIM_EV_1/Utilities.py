@@ -17,7 +17,7 @@ def ENERGY_stock(food_stock,water_stock,food_value=FOOD_ENERGY_VALUE,water_value
 
 def ENERGY_delta(food_stock,water_stock,food_delta=0,water_delta=0,food_relevance=FOOD_RELEVANCE,water_relevance=WATER_RELEVANCE):
     """Calculate energy gain from food amount and water amount."""
-    delta_E = ENERGY_stock(food_stock,water_stock,food_relevance=food_relevance,water_relevance=water_relevance)*(food_relevance*food_delta/food_stock + water_relevance*water_delta/water_stock)
+    delta_E = ENERGY_stock(food_stock,water_stock,food_relevance=food_relevance,water_relevance=water_relevance)*round(((food_relevance*food_delta)/food_stock + (water_relevance*water_delta)/water_stock), 2)
     return delta_E
 
 def ENERGY_act(Energy,food_stock,water_stock,food_delta=0,water_delta=0):
