@@ -11,17 +11,16 @@ import pathlib as path
 
 def ENERGY_stock(food_stock,water_stock,food_value=FOOD_ENERGY_VALUE,water_value=WATER_ENERGY_VALUE, food_relevance=FOOD_RELEVANCE,water_relevance=WATER_RELEVANCE):
     """Calculate energy stock from food amount and water amount."""
-    energy = round(((food_stock * food_value)**food_relevance) * ((water_stock * water_value)**water_relevance), 2)
-    
+    energy = ((food_stock * food_value)**food_relevance) * ((water_stock * water_value)**water_relevance)
     return energy
 
 def ENERGY_delta(food_stock,water_stock,food_delta=0,water_delta=0,food_relevance=FOOD_RELEVANCE,water_relevance=WATER_RELEVANCE):
-    """Calculate energy gain from food amount and water amount."""
-    delta_E = ENERGY_stock(food_stock,water_stock,food_relevance=food_relevance,water_relevance=water_relevance)*round(((food_relevance*food_delta)/food_stock + (water_relevance*water_delta)/water_stock), 2)
+    """Calculate a linear approximation of energy gain from the change in food amount and/or water amount."""
+    delta_E = ENERGY_stock(food_stock,water_stock,food_relevance=food_relevance,water_relevance=water_relevance)*((food_relevance*food_delta)/food_stock + (water_relevance*water_delta)/water_stock)
     return delta_E
 
 def ENERGY_act(Energy,food_stock,water_stock,food_delta=0,water_delta=0):
-    """Calculate new energy after food and water changes."""
+    """Calculate a linear approximation of the energy after food and water changes."""
     delta_E = ENERGY_delta(food_stock,water_stock,food_delta,water_delta)
     return Energy + delta_E
 
